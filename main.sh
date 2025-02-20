@@ -13,8 +13,6 @@ required_vars=(
     "MONITOR_PATH"
     "GIT_REMOTE"
     "GIT_BRANCH"
-    "IMAP_SERVER"
-    "IMAP_PORT"
     "GMAIL_USER"
     "GMAIL_PASSWORD"
     "COLLABORATORS"
@@ -52,7 +50,7 @@ if [[ ! -d "${REPO_PATH}/.git" ]]; then
     exit 1
 fi
 
-# Function to send email notification using PowerShell (Gmail IMAP)
+# Function to send email notification
 send_email() {
     local email_body="Changes were detected in ${MONITOR_PATH} and have been committed to Git."
     local email_subject="File Monitor: Changes Detected"
@@ -85,25 +83,27 @@ while true; do
         exit 1
     fi
 
-    # Using shasum instead of sha256sum for macOS compatibility
+    # Using shasum for macOS compatibility
     NEW_HASH=$(shasum -a 256 "${MONITOR_PATH}" | awk '{print $1}')
     
     if [[ "$NEW_HASH" != "$LAST_HASH" ]]; then
         echo "Change detected in ${MONITOR_PATH}..."
         
-        if ! cd "${REPO_PATH}"; then
+        # Change to repository directory
+        cd "${REPO_PATH}" || {
             echo "Error: Unable to change to repository directory!"
             rm -f "$LOCK_FILE"
             exit 1
-        fi
+        }
         
-        # Changed file using relative path
-        RELATIVE_PATH=$(realpath --relative-to="${REPO_PATH}" "${MONITOR_PATH}")
+        # Get the file name only for Git operations
+        FILE_NAME=$(basename "${MONITOR_PATH}")
         
-        if git add "${RELATIVE_PATH}" && \
-           git add "config.cfg" && \
-           git add "main.sh" && \
-           git commit -m "Auto-commit: Changes detected in ${MONITOR_PATH}" && \
+        # Perform Git operations
+        if git add "${FILE_NAME}" && \
+           git add config.cfg && \
+           git add main.sh && \
+           git commit -m "Auto-commit: Changes detected in ${FILE_NAME}" && \
            git push "${GIT_REMOTE}" "${GIT_BRANCH}"; then
             echo "Changes pushed successfully."
             send_email
