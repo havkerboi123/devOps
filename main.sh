@@ -83,7 +83,7 @@ while true; do
         exit 1
     fi
 
-    # Using shasum for macOS compatibility
+    # Compute new hash for file
     NEW_HASH=$(shasum -a 256 "${MONITOR_PATH}" | awk '{print $1}')
     
     if [[ "$NEW_HASH" != "$LAST_HASH" ]]; then
@@ -96,14 +96,18 @@ while true; do
             exit 1
         }
         
-        # Get the file name only for Git operations
+        # Get relative path
         FILE_NAME=$(basename "${MONITOR_PATH}")
         
+        # Ensure file is tracked
+        if git ls-files --error-unmatch "${FILE_NAME}" >/dev/null 2>&1; then
+            git add "${FILE_NAME}"
+        else
+            echo "Warning: ${FILE_NAME} is not tracked in Git. Skipping add."
+        fi
+        
         # Perform Git operations
-        if git add "${FILE_NAME}" && \
-           git add config.cfg && \
-           git add main.sh && \
-           git commit -m "Auto-commit: Changes detected in ${FILE_NAME}" && \
+        if git commit -am "Auto-commit: Changes detected in ${FILE_NAME}" && \
            git push "${GIT_REMOTE}" "${GIT_BRANCH}"; then
             echo "Changes pushed successfully."
             send_email
@@ -113,10 +117,10 @@ while true; do
             exit 1
         fi
         
-        # Hash update
+        # Update hash to avoid redundant commits
         LAST_HASH="$NEW_HASH"
     fi
     
-    # Wait
+    # Wait before next check
     sleep 5
 done
