@@ -45,10 +45,6 @@ if [[ -f "$LOCK_FILE" ]]; then
 fi
 touch "$LOCK_FILE"
 
-# Convert paths to Windows format for Git
-REPO_PATH_GIT=$(echo "$REPO_PATH" | sed 's/\//\\/g')
-MONITOR_PATH_GIT=$(echo "$MONITOR_PATH" | sed 's/\//\\/g')
-
 # Check if repository exists
 if [[ ! -d "${REPO_PATH}/.git" ]]; then
     echo "Error: ${REPO_PATH} is not a Git repository!"
@@ -61,34 +57,16 @@ send_email() {
     local email_body="Changes were detected in ${MONITOR_PATH} and have been committed to Git."
     local email_subject="File Monitor: Changes Detected"
     
-    powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "
-    try {
-        # Load required assemblies
-        Add-Type -AssemblyName System.Net.Mail
-        
-        # Create mail message
-        \$mail = New-Object System.Net.Mail.MailMessage
-        \$mail.From = '$GMAIL_USER'
-        foreach(\$recipient in ('$COLLABORATORS' -split ',')) {
-            \$mail.To.Add(\$recipient.Trim())
-        }
-        \$mail.Subject = '$email_subject'
-        \$mail.Body = '$email_body'
-        
-        # Create IMAP client
-        \$client = New-Object System.Net.Mail.SmtpClient('$IMAP_SERVER', $IMAP_PORT)
-        \$client.EnableSsl = \$true
-        \$client.Credentials = New-Object System.Net.NetworkCredential('$GMAIL_USER', '$GMAIL_PASSWORD')
-        
-        # Send mail
-        \$client.Send(\$mail)
-        Write-Output 'Email sent successfully'
-        
-    } catch {
-        Write-Output \"Error sending email: \$_\"
-        exit 1
-    }
-    "
+    osascript <<EOT
+        tell application "Mail"
+            set newMessage to make new outgoing message with properties {subject:"$email_subject", content:"$email_body", visible:true}
+            tell newMessage
+                make new to recipient at end of to recipients with properties {address:"$COLLABORATORS"}
+                set sender to "$GMAIL_USER"
+                send
+            end tell
+        end tell
+EOT
 }
 
 # Monitor path
@@ -107,7 +85,8 @@ while true; do
         exit 1
     fi
 
-    NEW_HASH=$(sha256sum "${MONITOR_PATH}" | awk '{print $1}')
+    # Using shasum instead of sha256sum for macOS compatibility
+    NEW_HASH=$(shasum -a 256 "${MONITOR_PATH}" | awk '{print $1}')
     
     if [[ "$NEW_HASH" != "$LAST_HASH" ]]; then
         echo "Change detected in ${MONITOR_PATH}..."
@@ -123,7 +102,7 @@ while true; do
         
         if git add "${RELATIVE_PATH}" && \
            git add "config.cfg" && \
-           git add "monitor_and_push.sh" && \
+           git add "main.sh" && \
            git commit -m "Auto-commit: Changes detected in ${MONITOR_PATH}" && \
            git push "${GIT_REMOTE}" "${GIT_BRANCH}"; then
             echo "Changes pushed successfully."
